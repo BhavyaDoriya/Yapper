@@ -1,0 +1,40 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# IntelliJ / VS Code
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/
+
+# Flutter/Dart
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+app.*.symbols
+app.*.map.json
+
+# Android Studio & Keystores (CRITICAL FOR PUBLISHING)
+/android/app/debug
+/android/app/profile
+/android/app/release
+*.jks
+*.keystore
+key.properties
+
+# Secrets (CRITICAL)
+.env
