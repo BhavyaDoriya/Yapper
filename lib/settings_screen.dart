@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'auth_screen.dart'; // Required for kicking the user out after deletion
+import 'auth_screen.dart'; 
+import 'tactical_selector.dart'; 
+import 'dusty_atmosphere.dart';
+import 'tactical_button.dart';
+import 'audio_manager.dart'; // REQUIRED FOR SOUNDS
+import 'credits_screen.dart'; // REQUIRED FOR NAVIGATION
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -46,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveSettings() async {
+    AudioManager().playThump(); // TRIGGER GEAR SOUND
     setState(() => _isSaving = true);
     try {
       final user = _supabase.auth.currentUser;
@@ -59,7 +65,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }).eq('id', user.id);
         
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings updated successfully')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CONFIGURATION SECURED')));
         }
       }
     } catch (e) {
@@ -71,9 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // --- THE ERASURE PROTOCOL ---
   Future<void> _deleteAccount() async {
-    // 1. Strict Confirmation Check
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -81,34 +85,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
-              backgroundColor: Theme.of(context).colorScheme.surface,
-              shape: RoundedRectangleBorder(
-                side: const BorderSide(color: Colors.redAccent),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                'DELETE ACCOUNT?', 
-                style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5)
-              ),
+              backgroundColor: const Color(0xFF111114),
+              shape: Border.all(color: Colors.redAccent.withOpacity(0.5), width: 1),
+              title: const Text('DELETE ACCOUNT?', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, letterSpacing: 2.0)),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'This will permanently erase your memory bank, settings, and authentication record. This cannot be undone.', 
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface)
-                  ),
+                  Text('This will permanently erase your memory bank, settings, and authentication record. This cannot be undone.', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
                   const SizedBox(height: 20),
                   TextField(
                     onChanged: (val) {
                       setStateDialog(() => isTypingMatch = val.trim() == 'DELETE');
                     },
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface, letterSpacing: 2.0),
                     decoration: InputDecoration(
                       hintText: 'Type DELETE to confirm',
                       hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4)),
-                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.redAccent.withOpacity(0.3))),
-                      focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.redAccent)),
+                      enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.redAccent)),
+                      focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.redAccent, width: 2)),
                     ),
                   )
                 ],
@@ -116,16 +111,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: Text('CANCEL', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+                  child: Text('CANCEL', style: TextStyle(color: Theme.of(context).colorScheme.primary, letterSpacing: 1.5)),
                 ),
-                ElevatedButton(
+                TextButton(
                   onPressed: isTypingMatch ? () => Navigator.pop(context, true) : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.redAccent.withOpacity(0.3),
-                  ),
-                  child: const Text('ERASE', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: Text('ERASE', style: TextStyle(color: isTypingMatch ? Colors.redAccent : Colors.redAccent.withOpacity(0.3), fontWeight: FontWeight.bold, letterSpacing: 2.0)),
                 ),
               ],
             );
@@ -138,18 +128,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      // 2. Trigger Backend Deletion
       await _supabase.rpc('delete_user');
-      
-      // 3. Clear Local Session
       await _supabase.auth.signOut();
-
-      // 4. Force App Reroute
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => const AuthScreen()),
-          (route) => false, // Annihilates the entire navigation history stack
+          (route) => false, 
         );
       }
     } catch (e) {
@@ -164,120 +149,151 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_isLoading) return Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: theme.colorScheme.primary)));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('SETTINGS', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // --- APP PREFERENCES ---
-              Text("APP PREFERENCES", style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 12)),
-              const SizedBox(height: 16),
-              
-              DropdownButtonFormField<String>(
-                value: _activeCategory,
-                decoration: InputDecoration(
-                  labelText: 'Primary Focus',
-                  filled: true,
-                  fillColor: theme.colorScheme.surface,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                ),
-                items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                onChanged: (val) => setState(() => _activeCategory = val!),
-              ),
-              const SizedBox(height: 16),
+    return Stack(
+      children: [
+        const DustyAtmosphere(), 
 
-              TextField(
-                controller: _goalController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Daily Word Goal',
-                  filled: true,
-                  fillColor: theme.colorScheme.surface,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                ),
-              ),
-              const SizedBox(height: 40),
+        Scaffold(
+          backgroundColor: Colors.transparent, 
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: const Text('SYSTEM CONFIG'),
+          ),
+          body: SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: 600, 
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(32.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("APP PREFERENCES", style: TextStyle(color: theme.colorScheme.primary.withOpacity(0.4), fontWeight: FontWeight.bold, letterSpacing: 3.0, fontSize: 11)),
+                      const SizedBox(height: 20),
+                      
+                      TacticalSelector(
+                        label: 'PRIMARY FOCUS',
+                        options: _categories,
+                        currentValue: _activeCategory,
+                        onChanged: (val) => setState(() => _activeCategory = val),
+                      ),
+                      const SizedBox(height: 8),
 
-              // --- AI ENGINE CONFIGURATION ---
-              Text("AI ENGINE CONFIGURATION", style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 12)),
-              const SizedBox(height: 8),
-              Text("Bring your own API key to bypass default limits.", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontSize: 12)),
-              const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text("DAILY WORD GOAL", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontWeight: FontWeight.bold, letterSpacing: 2.0, fontSize: 13)),
+                            SizedBox(
+                              width: 160, 
+                              child: TextField(
+                                controller: _goalController,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2, fontSize: 18),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                                  enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24, width: 1)),
+                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 60),
 
-              DropdownButtonFormField<String>(
-                value: _selectedProvider,
-                decoration: InputDecoration(
-                  labelText: 'AI Provider',
-                  filled: true,
-                  fillColor: theme.colorScheme.surface,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                ),
-                items: _providers.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                onChanged: (val) => setState(() => _selectedProvider = val!),
-              ),
-              const SizedBox(height: 16),
+                      Text("AI ENGINE CONFIGURATION", style: TextStyle(color: theme.colorScheme.primary.withOpacity(0.4), fontWeight: FontWeight.bold, letterSpacing: 3.0, fontSize: 11)),
+                      const SizedBox(height: 20),
 
-              TextField(
-                controller: _apiKeyController,
-                obscureText: true, 
-                decoration: InputDecoration(
-                  labelText: 'Custom API Key',
-                  hintText: 'sk-...',
-                  filled: true,
-                  fillColor: theme.colorScheme.surface,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                ),
-              ),
-              
-              const SizedBox(height: 40),
+                      TacticalSelector(
+                        label: 'AI PROVIDER',
+                        options: _providers,
+                        currentValue: _selectedProvider,
+                        onChanged: (val) => setState(() => _selectedProvider = val),
+                      ),
+                      const SizedBox(height: 8),
 
-              // --- SAVE BUTTON ---
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveSettings,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: theme.colorScheme.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text("CUSTOM API KEY", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6), fontWeight: FontWeight.bold, letterSpacing: 2.0, fontSize: 13)),
+                            SizedBox(
+                              width: 160, 
+                              child: TextField(
+                                controller: _apiKeyController,
+                                obscureText: true,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(letterSpacing: 2, fontSize: 18),
+                                decoration: InputDecoration(
+                                  hintText: 'sk-...',
+                                  hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.2)),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                                  enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24, width: 1)),
+                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: theme.colorScheme.primary, width: 2)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 60),
+
+                      TacticalButton(
+                        label: "INITIALIZE CHANGES",
+                        onTap: _isSaving ? null : _saveSettings,
+                        isLoading: _isSaving,
+                      ),
+
+                      const SizedBox(height: 60),
+
+                      Text("SYSTEM DATA", style: TextStyle(color: theme.colorScheme.primary.withOpacity(0.4), fontWeight: FontWeight.bold, letterSpacing: 3.0, fontSize: 11)),
+                      const SizedBox(height: 20),
+
+                      InkWell(
+                        onTap: () {
+                          AudioManager().playClick();
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const CreditsScreen()));
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            border: Border(bottom: BorderSide(color: theme.colorScheme.primary.withOpacity(0.3), width: 1)),
+                          ),
+                          child: Text("VIEW ENGINE CREDITS", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.8), letterSpacing: 2.0, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+
+                      const SizedBox(height: 60),
+
+                      Text("DANGER ZONE", style: TextStyle(color: Colors.redAccent.withOpacity(0.6), fontWeight: FontWeight.bold, letterSpacing: 3.0, fontSize: 11)),
+                      const SizedBox(height: 20),
+                      
+                      TacticalButton(
+                        label: "DELETE ACCOUNT",
+                        onTap: _isLoading ? null : _deleteAccount,
+                        isDanger: true,
+                        isLoading: _isLoading,
+                      ),
+                    ],
                   ),
-                  child: _isSaving
-                      ? SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary))
-                      : Text("SAVE CONFIGURATION", style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
                 ),
               ),
-
-              const SizedBox(height: 50),
-
-              // --- DANGER ZONE ---
-              const Divider(color: Colors.white24),
-              const SizedBox(height: 20),
-              const Text("DANGER ZONE", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 12)),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: _isLoading ? null : _deleteAccount,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                    side: const BorderSide(color: Colors.redAccent, width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  ),
-                  child: const Text("DELETE ACCOUNT", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

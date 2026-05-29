@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dusty_atmosphere.dart'; // THE PHYSICS ENGINE
 
 class TestScreen extends StatefulWidget {
   const TestScreen({super.key});
@@ -41,15 +41,16 @@ class _TestScreenState extends State<TestScreen> {
       final user = _supabase.auth.currentUser;
       if (user == null) return;
 
-      // Fetch ALL known words
       final data = await _supabase.from('known_words').select('word').eq('user_id', user.id);
       List<String> allWords = List<String>.from(data.map((row) => row['word'].toString()));
       
       if (allWords.length < 4) {
-        setState(() {
-          _errorMessage = "You need at least 4 words in your Memory Bank to enter the Test Arena. Keep studying!";
-          _isLoadingQuiz = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = "You need at least 4 words in your Memory Bank to enter the Test Arena. Keep studying!";
+            _isLoadingQuiz = false;
+          });
+        }
         return;
       }
 
@@ -58,21 +59,27 @@ class _TestScreenState extends State<TestScreen> {
 
       await _generateQuizFromAI(testWords);
     } catch (e) {
-      setState(() {
-        _errorMessage = "Failed to access memory bank: $e";
-        _isLoadingQuiz = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Failed to access memory bank: $e";
+          _isLoadingQuiz = false;
+        });
+      }
     }
   }
 
   Future<void> _generateQuizFromAI(List<String> words) async {
-    
     try {
+      // 1. GET THE USER'S SECURE BADGE
+      final session = _supabase.auth.currentSession;
+      if (session == null) throw Exception("Unauthorized: No secure session found.");
+      final token = session.accessToken;
+
       final response = await http.post(
-        Uri.parse('https://vocab-proxy-three.vercel.app/api/generate'), // <-- YOUR CLOUD SERVER
+        Uri.parse('https://vocab-proxy-three.vercel.app/api/generate'), 
         headers: {
           'Content-Type': 'application/json',
-          // NO API KEY HERE! The cloud handles it.
+          'Authorization': 'Bearer $token', // 2. SHOW THE BADGE TO VERCEL
         },
         body: jsonEncode({
           "model": "llama-3.3-70b-versatile", 
@@ -94,7 +101,6 @@ class _TestScreenState extends State<TestScreen> {
       if (response.statusCode == 200) {
         if (!mounted) return;
         
-        // Strip out markdown if AI hallucinates it
         String rawContent = jsonDecode(response.body)['choices'][0]['message']['content'];
         rawContent = rawContent.replaceAll('```json', '').replaceAll('```', '').trim();
         
@@ -105,18 +111,18 @@ class _TestScreenState extends State<TestScreen> {
           _isLoadingQuiz = false;
         });
       } else {
-        setState(() {
-          _errorMessage = "AI Engine failed to construct quiz. Code: ${response.statusCode}";
-          _isLoadingQuiz = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = "AI Engine failed to construct quiz. Code: ${response.statusCode}";
+            _isLoadingQuiz = false;
+          });
+        }
       }
     } catch (e) {
       if (mounted) setState(() { _errorMessage = "Connection error."; _isLoadingQuiz = false; });
     }
   }
 
-  // --- THE FIXED AI GRADER ---
-// --- THE FIXED AI GRADER ---
   Future<void> _submitOpenEndedAnswer() async {
     if (_answerController.text.trim().isEmpty) return;
     
@@ -124,11 +130,16 @@ class _TestScreenState extends State<TestScreen> {
     final currentQ = _quizQuestions[_currentIndex];
 
     try {
+      // 1. GET THE USER'S SECURE BADGE
+      final session = _supabase.auth.currentSession;
+      if (session == null) throw Exception("Unauthorized: No secure session found.");
+      final token = session.accessToken;
+
       final response = await http.post(
-        Uri.parse('https://vocab-proxy-three.vercel.app/api/generate'), // <-- Routed to your secure proxy
+        Uri.parse('https://vocab-proxy-three.vercel.app/api/generate'), 
         headers: {
           'Content-Type': 'application/json',
-          // API key is handled securely by the cloud server now
+          'Authorization': 'Bearer $token', // 2. SHOW THE BADGE TO VERCEL
         },
         body: jsonEncode({
           "model": "llama-3.3-70b-versatile", 
@@ -147,7 +158,6 @@ class _TestScreenState extends State<TestScreen> {
       );
 
       if (response.statusCode == 200 && mounted) {
-        // Strip markdown to prevent silent JSON parse crashes
         String rawContent = jsonDecode(response.body)['choices'][0]['message']['content'];
         rawContent = rawContent.replaceAll('```json', '').replaceAll('```', '').trim();
         
@@ -156,7 +166,7 @@ class _TestScreenState extends State<TestScreen> {
         
         _handleAnswerResult(isCorrect);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI Grading failed. Please try again or skip."), backgroundColor: Colors.redAccent));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("AI Grading failed. Please try again or skip."), backgroundColor: Colors.redAccent));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.redAccent));
@@ -176,8 +186,8 @@ class _TestScreenState extends State<TestScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(isCorrect ? "Correct! +1" : "Incorrect."),
-        backgroundColor: isCorrect ? Colors.green : Colors.redAccent,
+        content: Text(isCorrect ? "CORRECT (+1)" : "INCORRECT", style: const TextStyle(letterSpacing: 2.0, fontWeight: FontWeight.bold)),
+        backgroundColor: isCorrect ? const Color(0xFF2E7D32) : Colors.redAccent, 
         duration: const Duration(milliseconds: 1000),
       ),
     );
@@ -195,7 +205,6 @@ class _TestScreenState extends State<TestScreen> {
     });
   }
 
-  // --- ABORT TRIAL DIALOG ---
   Future<bool> _requestExit() async {
     if (_isQuizComplete || _isLoadingQuiz || _errorMessage.isNotEmpty) {
       Navigator.of(context).pop();
@@ -205,18 +214,18 @@ class _TestScreenState extends State<TestScreen> {
     final shouldExit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(side: BorderSide(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)), borderRadius: BorderRadius.circular(20)),
-        title: Text('ABORT TRIAL?', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+        backgroundColor: const Color(0xFF111114), 
+        shape: Border.all(color: Colors.redAccent.withOpacity(0.5), width: 1), 
+        title: const Text('ABORT TRIAL?', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, letterSpacing: 2.0)),
         content: Text('Are you sure you want to exit? Your current score will be lost and you cannot resume.', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text('CONTINUE', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
+            child: Text('CONTINUE', style: TextStyle(color: Theme.of(context).colorScheme.primary, letterSpacing: 1.5)),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('ABORT', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            child: const Text('ABORT', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, letterSpacing: 2.0)),
           ),
         ],
       ),
@@ -232,137 +241,149 @@ class _TestScreenState extends State<TestScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Using PopScope to catch Android hardware back buttons
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         await _requestExit();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('TEST ARENA', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.bold)),
-          // Catch AppBar back button
-          leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _requestExit),
-        ),
-        body: SafeArea(
-          child: _isLoadingQuiz 
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(color: theme.colorScheme.primary),
-                    const SizedBox(height: 20),
-                    Text("Constructing your customized trial...", style: TextStyle(color: theme.colorScheme.primary)),
-                  ],
-                ),
-              )
-            : _errorMessage.isNotEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(30.0),
-                    child: Text(_errorMessage, textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.error, fontSize: 16)),
-                  ),
-                )
-              : _isQuizComplete
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.military_tech, size: 100, color: theme.colorScheme.primary),
-                        const SizedBox(height: 20),
-                        Text("TRIAL COMPLETE", style: theme.textTheme.headlineMedium?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 10),
-                        Text("Score: $_score / ${_quizQuestions.length}", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 40),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.primary, padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16)),
-                          child: Text("RETURN TO HUB", style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.bold)),
-                        )
-                      ],
-                    ),
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      children: [
-                        Text("QUESTION ${_currentIndex + 1} OF ${_quizQuestions.length}", style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 2)),
-                        const SizedBox(height: 20),
-                        Card(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.3))),
+      child: Stack(
+        children: [
+          const DustyAtmosphere(), 
+
+          Scaffold(
+            backgroundColor: Colors.transparent, 
+            appBar: AppBar(
+              title: const Text('TEST ARENA', style: TextStyle(letterSpacing: 4, fontWeight: FontWeight.bold, fontSize: 14)),
+              leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: _requestExit),
+            ),
+            body: SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: 600, 
+                  child: _isLoadingQuiz 
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(color: theme.colorScheme.primary),
+                            const SizedBox(height: 20),
+                            Text("CONSTRUCTING TRIAL...", style: TextStyle(color: theme.colorScheme.primary, letterSpacing: 2.0)),
+                          ],
+                        ),
+                      )
+                    : _errorMessage.isNotEmpty
+                      ? Center(
                           child: Padding(
-                            padding: const EdgeInsets.all(24.0),
+                            padding: const EdgeInsets.all(30.0),
+                            child: Text(_errorMessage, textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.error, fontSize: 16, letterSpacing: 1.5)),
+                          ),
+                        )
+                      : _isQuizComplete
+                        ? Center(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(
-                                  _quizQuestions[_currentIndex]['question'],
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 30),
+                                Icon(Icons.military_tech, size: 80, color: theme.colorScheme.primary),
+                                const SizedBox(height: 20),
+                                Text("TRIAL COMPLETE", style: theme.textTheme.headlineMedium?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 4)),
+                                const SizedBox(height: 20),
+                                Text("SCORE: $_score / ${_quizQuestions.length}", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2.0)),
+                                const SizedBox(height: 60),
                                 
-                                // --- MULTIPLE CHOICE UI ---
-                                if (_quizQuestions[_currentIndex]['type'] == 'mcq') ...[
-                                  ...(_quizQuestions[_currentIndex]['options'] as List<dynamic>).map((option) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 12.0),
-                                    child: OutlinedButton(
-                                      onPressed: () => _submitMCQAnswer(option.toString()),
-                                      style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.5)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                InkWell(
+                                  onTap: () => Navigator.pop(context),
+                                  child: Text("RETURN TO HUB", style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 3.0, fontSize: 14)),
+                                )
+                              ],
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              children: [
+                                Text("QUESTION ${_currentIndex + 1} OF ${_quizQuestions.length}", style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.4), fontWeight: FontWeight.bold, letterSpacing: 3, fontSize: 10)),
+                                const SizedBox(height: 40),
+                                
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 40.0, horizontal: 20.0),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      top: BorderSide(color: theme.colorScheme.primary.withOpacity(0.2), width: 1),
+                                      bottom: BorderSide(color: theme.colorScheme.primary.withOpacity(0.2), width: 1),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Text(
+                                        _quizQuestions[_currentIndex]['question'],
+                                        style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.primary, letterSpacing: 1.0),
+                                        textAlign: TextAlign.center,
                                       ),
-                                      child: Text(option.toString(), style: TextStyle(color: theme.colorScheme.onSurface)),
-                                    ),
-                                  )),
-                                  const SizedBox(height: 20),
-                                  // THE SKIP BUTTON
-                                  TextButton(
-                                    onPressed: () => _handleAnswerResult(false),
-                                    child: const Text("Skip Question", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 40),
+                                      
+                                      if (_quizQuestions[_currentIndex]['type'] == 'mcq') ...[
+                                        ...(_quizQuestions[_currentIndex]['options'] as List<dynamic>).map((option) => InkWell(
+                                          onTap: () => _submitMCQAnswer(option.toString()),
+                                          child: Container(
+                                            margin: const EdgeInsets.only(bottom: 12.0),
+                                            padding: const EdgeInsets.symmetric(vertical: 16),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(color: theme.colorScheme.primary.withOpacity(0.3), width: 1),
+                                              color: theme.colorScheme.surface.withOpacity(0.1),
+                                            ),
+                                            child: Text(option.toString(), textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.onSurface, letterSpacing: 1.5, fontSize: 16)),
+                                          ),
+                                        )),
+                                      ] 
+                                      else ...[
+                                        TextField(
+                                          controller: _answerController,
+                                          maxLines: 3,
+                                          style: const TextStyle(letterSpacing: 1.5),
+                                          decoration: InputDecoration(
+                                            hintText: "Enter your tactical analysis...",
+                                            hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.2)),
+                                            enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: Colors.white24, width: 1), borderRadius: BorderRadius.zero),
+                                            focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5), borderRadius: BorderRadius.zero),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 30),
+                                        
+                                        InkWell(
+                                          onTap: _isGrading ? null : _submitOpenEndedAnswer,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(vertical: 16),
+                                            decoration: BoxDecoration(
+                                              border: Border.all(color: theme.colorScheme.primary, width: 1.5),
+                                              color: theme.colorScheme.primary.withOpacity(0.1),
+                                            ),
+                                            child: _isGrading 
+                                              ? Center(child: SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary)))
+                                              : Center(child: Text("SUBMIT ANALYSIS", style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 2.0))),
+                                          ),
+                                        ),
+                                      ],
+                                      
+                                      const SizedBox(height: 40),
+                                      InkWell(
+                                        onTap: _isGrading ? null : () => _handleAnswerResult(false),
+                                        child: Text("SKIP DIRECTIVE", textAlign: TextAlign.center, style: TextStyle(color: Colors.redAccent.withOpacity(0.8), fontWeight: FontWeight.bold, letterSpacing: 2.0, fontSize: 10)),
+                                      ),
+                                    ],
                                   ),
-                                ] 
-                                // --- OPEN ENDED UI ---
-                                else ...[
-                                  TextField(
-                                    controller: _answerController,
-                                    maxLines: 3,
-                                    decoration: InputDecoration(
-                                      hintText: "Type your explanation here...",
-                                      filled: true,
-                                      fillColor: theme.colorScheme.surface,
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 20),
-                                  ElevatedButton(
-                                    onPressed: _isGrading ? null : _submitOpenEndedAnswer,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: theme.colorScheme.primary,
-                                      padding: const EdgeInsets.symmetric(vertical: 16),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                                    ),
-                                    child: _isGrading 
-                                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                                      : Text("SUBMIT FOR GRADING", style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.bold)),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  // THE SKIP BUTTON
-                                  TextButton(
-                                    onPressed: _isGrading ? null : () => _handleAnswerResult(false),
-                                    child: const Text("Skip Question", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                  ),
-                                ]
+                                ),
                               ],
                             ),
                           ),
-                        )
-                      ],
-                    ),
-                  ),
-        ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
