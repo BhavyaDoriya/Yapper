@@ -38,3 +38,7 @@ key.properties
 
 # Secrets (CRITICAL)
 .env
+# Ignore desktop build folders
+/linux/
+/macos/
+/windows/
